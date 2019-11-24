@@ -83,3 +83,5 @@ if __name__ == "__main__":
 
     path = 'D:\\Python\\get_photos\\'
     doCrew(url, path)
+
+# test
