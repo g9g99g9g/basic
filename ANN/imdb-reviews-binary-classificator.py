@@ -4,11 +4,14 @@ import tensorflow as tf
 from tensorflow.keras import Sequential, layers
 
 # based on <https://geektutu.com/post/tf2doc-rnn-lstm-text.html>
+# <https://tensorflow.google.cn/datasets/catalog/imdb_reviews>
 ds, info = tfds.load('imdb_reviews/subwords8k', with_info=True, as_supervised=True)
 train_ds, test_ds = ds['train'], ds['test']
 
-BUFFER_SIZE, BATCH_SIZE = 10000, 64
-train_ds = train_ds.shuffle(BUFFER_SIZE)
+BUFFER_SIZE, BATCH_SIZE = 10000, 64  # batch=64时每次迭代耗时约25秒；batch=1K时卡死
+# batch=100时每次迭代耗时约35秒；batch=10时每次迭代1秒
+
+train_ds = train_ds.shuffle(BUFFER_SIZE)  # buffer_size:表示新数据集将从原数据集中采样的元素数
 train_ds = train_ds.padded_batch(BATCH_SIZE, train_ds.output_shapes)
 test_ds = test_ds.padded_batch(BATCH_SIZE, test_ds.output_shapes)
 
@@ -25,11 +28,11 @@ for ts in tokenized_str:
 # ----------------- Bi-LSTM model -----------------
 model = Sequential([layers.Embedding(tokenizer.vocab_size, 64), \
                     layers.Bidirectional(layers.LSTM(64, return_sequences=True)), \
-                    layers.Bidirectional(layers.LSTM(32)), \
+                    layers.Bidirectional(layers.LSTM(32, dropout=0.1, recurrent_dropout=0.2)), \
                     layers.Dense(64, activation='relu'), \
                     layers.Dense(1, activation='sigmoid')])
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-history = model.fit(train_ds, epochs=3, validation_data=test_ds)
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])  # 设置该模型的学习流程：二元交叉熵、ADAM
+history = model.fit(train_ds, epochs=1, validation_data=test_ds)
 loss, acc = model.evaluate(test_ds)
 print('准确率:', acc)
 
