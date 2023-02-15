@@ -1,0 +1,104 @@
+# -*- coding:utf-8 -*-
+# Author: Shudong YANG
+# 2023/02/15
+import pandas as pd
+filename = 'D:\\PhD\\12-做任务\\20230215-SubjectCat\\Input\\TrainingSet-20924.xlsx'
+df = pd.read_excel(filename)
+df = df[['cat', 'corpus']]
+print("数据总量: %d."%len(df))
+print(df.sample(10))
+
+# 将学科分类cat 转换为 分类代码cat_id
+df['cat_id'] = df['cat'].factorize()[0]
+cat_id_df = df[['cat', 'cat_id']].drop_duplicates().sort_values('cat_id').reset_index(drop=True)
+cat_to_id = dict(cat_id_df.values)
+id_to_cat = dict(cat_id_df[['cat_id', 'cat']].values)
+print(df.sample(10))
+
+# 自然语言处理
+import re
+import jieba as jb
+def remove_punctuation(line):  # 使用正则表达式来过滤各种标点符号
+    line = str(line)
+    if line.strip()=='':
+        return
+    rule = re.compile(u"[^a-zA-Z0-9\u4E00-\u9FA5]")
+    line = rule.sub('',line)
+    return line
+
+# 删除停用词 + 分词
+filepath = 'D:\\PhD\\12-做任务\\20230215-SubjectCat\\Input\\stopwords.txt'
+def stopwordslist(filepath):
+    stopwords = [line.strip() for line in open(filepath, 'r', encoding='utf-8').readlines()]
+    return stopwords
+stopwords = stopwordslist(filepath)
+df['clean_corpus'] = df['corpus'].apply(remove_punctuation)
+df['cut_corpus'] = df['clean_corpus'].apply(lambda x: " ".join([w for w in list(jb.cut(x)) if w not in stopwords]))
+
+print(df.sample(10))
+
+# LSTM建模
+# import tokenizer
+import tensorflow as tf
+# 因为是版本冲突了，这里无法导入 import keras
+import tensorflow.keras as tk
+#from keras.preprocessing.text import Tokenizer
+# 设置最频繁使用的50000个词
+MAX_NB_WORDS = 10000
+# 每条cut_review最大的长度
+MAX_SEQUENCE_LENGTH = 300
+# 设置Embeddingceng层的维度
+EMBEDDING_DIM = 100
+# um_words:保留的最大词数，根据词频计算，保留前num_word -1个
+#tokenizer = Tokenizer(num_words=MAX_NB_WORDS, filters='!"#$%&()*+,-./:;<=>?@[\]_{|]~', lower=True)
+tokenizer = tf.keras.preprocessing.text.Tokenizer()  # Tokenizer：将文本转化成正整数序列
+# fit_on_texts （用以训练的已分过词的文本列表）
+tokenizer.fit_on_texts(df['clean_corpus'].values)
+word_index = tokenizer.word_index
+
+print('共有%s 个不相同的词语.' % len(word_index))
+
+# 定义自变量和因变量
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+X = tokenizer.texts_to_sequences(df['cut_corpus'].values)
+#经过上一步操作后，x为整数构成的两层嵌套ist
+X = pad_sequences(X, maxlen=MAX_SEQUENCE_LENGTH)
+#经过上步操作后，此时x变成了numpy.ndarray
+#多类标签的onehot 展开
+Y = pd.get_dummies(df['cat_id']).values
+print(X.shape)
+print(Y.shape)
+
+# 定义训练集和测试集
+from sklearn.model_selection import train_test_split
+# 拆分训练集和测试集，x为被划分样本的特征集，Y为被划分样本的标签
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size = 0.10, random_state = 42)
+print(X_train.shape, Y_train.shape)
+print(X_test.shape, Y_test.shape)
+
+# 搭建神经网络
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Embedding(MAX_NB_WORDS, EMBEDDING_DIM, input_length=X.shape[1]))
+model.add(tf.keras.layers.SpatialDropout1D(0.2))#dropout会随机独之地将部分元素置零，而spatialDropout1D会随机地对某个特定的结度全部置零
+model.add(tf.keras.layers.LSTM(100, dropout=0.2, recurrent_dropout=0.2))
+model.add(tf.keras.layers.Dense(8,activation='softmax'))#翰出层包含8个分类的全连接层, 激活函数设置为softmax
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+print(model.summary())
+
+# 参数配置
+from tensorflow.keras.callbacks import EarlyStopping
+epochs = 5
+batch_size= 64 #指定梯度下降时每个batch包含的样本数
+#callbacks （list），其中元素是keras.callbacks.callback的对象。这Nist的回调函数将在训练过程中的适当时机被调用
+#validation_split指定训练集中百分之十的数据作为验证集
+history = model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size,validation_split=0.1, \
+                    callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, min_delta=0.0001)])
+
+# 可视化
+import matplotlib.pyplot as plt
+plt.title('Loss')
+plt.plot(history.history['loss'], label='train')
+plt.plot(history.history['val_loss'], label='test')
+plt.legend()
+plt.show()
+
